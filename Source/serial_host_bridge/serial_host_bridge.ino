@@ -27,14 +27,27 @@
 #define I2CSCL 3
 #define resetPin 4
 
+#define deviceAddress 63
+
 void updateUARTBaud();
 void updateUSBBaud();
 void restartMCU();
 void sendCurrentUARTBaud();
 void sendCurrentUSBBaud();
 void checkUSBConnection();
+void disablePassthrough();
+void enablePassthrough();
 void I2C_TxHandler();
 void I2C_RxHandler(int RXnum);
+
+void reportTemperature();
+void printPercentage();
+void stopPrint();
+void pausePrint();
+void resumePrint();
+void homePrinter();
+void autoLevel();
+void currentPrintTime();
 
 void forward_serial(void);
 
@@ -47,6 +60,7 @@ volatile uint8_t commandBuffer[16];
 volatile uint8_t commandRequest = 0;
 
 bool USBStatus = false;
+bool passthrough = false;
 
 void I2C_RxHandler(int RXnum) {
   uint8_t i = 0;
@@ -57,18 +71,40 @@ void I2C_RxHandler(int RXnum) {
     i++;
   }
 
-  if (commandBuffer[0] == 101) {
-    updateUARTBaud();
-  } else if (commandBuffer[0] == 102) {
-    updateUSBBaud();
-  } else if (commandBuffer[0] == 103) {
-    restartMCU();
-  } else if (commandBuffer[0] == 104) {
-    sendCurrentUARTBaud();
-  } else if (commandBuffer[0] == 105) {
-    sendCurrentUSBBaud();
-  } else if (commandBuffer[0] == 106) {
-    checkUSBConnection();
+  if (commandBuffer[0] == deviceAddress) {
+    if (commandBuffer[1] == 101) {
+      updateUARTBaud();
+    } else if (commandBuffer[1] == 102) {
+      updateUSBBaud();
+    } else if (commandBuffer[1] == 103) {
+      restartMCU();
+    } else if (commandBuffer[1] == 104) {
+      sendCurrentUARTBaud();
+    } else if (commandBuffer[1] == 105) {
+      sendCurrentUSBBaud();
+    } else if (commandBuffer[1] == 106) {
+      checkUSBConnection();
+    } else if (commandBuffer[1] == 107) {
+      disablePassthrough();
+    } else if (commandBuffer[1] == 108) {
+      disablePassthrough();
+    } else if (commandBuffer[1] == 201) {
+      reportTemperature();
+    } else if (commandBuffer[1] == 202) {
+      printPercentage();
+    } else if (commandBuffer[1] == 203) {
+      stopPrint();
+    } else if (commandBuffer[1] == 204) {
+      pausePrint();
+    } else if (commandBuffer[1] == 205) {
+      resumePrint();
+    } else if (commandBuffer[1] == 206) {
+      homePrinter();
+    } else if (commandBuffer[1] == 207) {
+      autoLevel();
+    } else if (commandBuffer[1] == 208) {
+      currentPrintTime();
+    }
   }
 
 }
@@ -94,7 +130,7 @@ void forward_serial(void) {
   }
 
   // SerialHost -> Serial
-  if (SerialHost.connected() && SerialHost.available()) {
+  if (SerialHost.connected() && SerialHost.available() && passthrough) {
     size_t count = SerialHost.read(buf, sizeof(buf));
     Serial1.write(buf, count);
     Serial1.flush();
@@ -125,7 +161,7 @@ void setup() {
 
   Serial.begin(115200);
   Serial1.begin(baudRates[uartSerial]);
-  
+
   Serial.println("TinyUSB Host Serial Echo Example");
 }
 
@@ -180,9 +216,11 @@ void updateUARTBaud() {
 
   delay(20);
 
-  if (commandBuffer[1] < sizeof(baudRates)) {
-    uartSerial = commandBuffer[1];
+  if (commandBuffer[2] < sizeof(baudRates)) {
+    uartSerial = commandBuffer[2];
     Serial1.begin(baudRates[uartSerial]);
+
+    Serial1.println(baudRates[uartSerial]);
 
     Wire.write('t');
   } else {
@@ -196,9 +234,11 @@ void updateUSBBaud() {
 
   delay(20);
 
-  if (commandBuffer[1] < sizeof(baudRates)) {
-    usbSerial = commandBuffer[1];
+  if (commandBuffer[2] < sizeof(baudRates)) {
+    usbSerial = commandBuffer[2];
     SerialHost.begin(baudRates[usbSerial]);
+
+    Serial1.println(baudRates[usbSerial]);
 
     Wire.write('t');
   } else {
@@ -214,6 +254,8 @@ void restartMCU() {
 
   Wire.write('y');
 
+  Serial1.println("reset trigger");
+
   delay(500);
 
   digitalWrite(resetPin, LOW);
@@ -221,16 +263,65 @@ void restartMCU() {
 
 void sendCurrentUARTBaud() {
   Wire.write(uartSerial);
+
+  Serial1.println(baudRates[uartSerial]);
 }
 
 void sendCurrentUSBBaud() {
   Wire.write(usbSerial);
+
+  Serial1.println(baudRates[usbSerial]);
 }
 
 void checkUSBConnection() {
   if (USBStatus) {
     Wire.write('c');
+
+    Serial1.println("connected");
   } else if (!USBStatus) {
     Wire.write('d');
+
+    Serial1.println("not connected");
   }
+}
+
+void disablePassthrough() {
+  passthrough = false;
+}
+
+void enablePassthrough() {
+  passthrough = true;
+}
+
+//PRINT COMMANDS
+void reportTemperature() {
+  SerialHost.write("M155");
+}
+
+void printPercentage() {
+  SerialHost.write("M27");
+}
+
+void stopPrint() {
+  SerialHost.write("M524");
+}
+
+void pausePrint() {
+  SerialHost.write("M0");
+}
+
+void resumePrint() {
+  SerialHost.write("M108");
+}
+
+void homePrinter() {
+  SerialHost.write("G28");
+}
+
+void autoLevel() {
+  SerialHost.write("G29");
+}
+
+void currentPrintTime() {
+  SerialHost.write("M31");
 }
